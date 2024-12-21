@@ -3,7 +3,7 @@ project(
   'c',
   version: '0.1.0',
   default_options : ['warning_level=3', 
-    'buildtype=debugoptimised'])
+    'buildtype=debugoptimized'])
 
 cc = meson.get_compiler('c')
 
@@ -22,8 +22,8 @@ endif
 
 # either SDL3 or SDL2 can be used for this project
 sdl = dependency('', required: false)
-sdl2 = dependency('sdl2')
-sdl2 = dependency('sdl3')
+sdl2 = dependency('sdl2', required: false)
+sdl3 = dependency('sdl3', required: false)
 if sdl3.found()
   pre_args += '-DSDL3_DEP'
   sdl = sdl3
