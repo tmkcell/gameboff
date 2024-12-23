@@ -10,5 +10,6 @@ AlignEscapedNewlines: DontAlign
 AlignAfterOpenBracket: DontAlign
 SpaceAfterCStyleCast: false
 AlignTrailingComments: true
+IndentCaseLabels: true
 IndentWidth: 4
 ColumnLimit: 0
