@@ -1,3 +1,26 @@
-struct {
+#include <stdbool.h>
+#include <stdint.h>
 
-}
+typedef union _reg {
+    uint16_t pair;
+    uint8_t hilo[2];
+    struct {
+        uint8_t hi;
+        unsigned z : 1;
+        unsigned n : 1;
+        unsigned h : 1;
+        unsigned c : 1;
+        unsigned lo : 4;
+    } flags;
+} reg;
+
+typedef struct {
+    uint8_t *mem;
+    reg af, bc, de, hl;
+    uint16_t pc, sp;
+    bool halt;
+} sm83;
+
+void sm83_init(sm83 *self, int memsize);
+void sm83_deinit(sm83 *self);
+void sm83_step(sm83 *self);
