@@ -1,4 +1,6 @@
+#include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 
 int main(int argc, char **argv) {
@@ -37,5 +39,18 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    FILE *filePtr = NULL;
+    filePtr = fopen(argv[argc - 1], "rb");
+    // Puts the file position pointer at end of the file
+    fseek(filePtr, 0, SEEK_END);
+    // Gives the position of the file position pointer
+    uint32_t programSize = ftell(filePtr);
+    // Puts the file position pointer to the beginning of the file
+    rewind(filePtr);
+
+    // THE REST OF THE CODE GOES HERE
+
+    fclose(filePtr);
+    filePtr = NULL;
     return 0;
 }
