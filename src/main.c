@@ -6,7 +6,11 @@ int main(int argc, char **argv) {
                        "Options:\n"
                        "    -h     Returns help menu\n"
                        "    -v     Returns the program version\n";
-    for (int i = 1; i < argc - 1; ++i) {
+    if (argc == 1) {
+        fprintf(stderr, "No ROM path specified\n%s", help);
+        return 1;
+    }
+    for (int i = 1; i < argc; ++i) {
         if (argv[i][0] == '-') {
             switch (argv[i][1]) {
             case 'v':
@@ -20,6 +24,8 @@ int main(int argc, char **argv) {
                 return (1);
             }
         } else {
+            if (argc == 2)
+                break;
             fprintf(stderr, "Unrecognised option \"%s\"\n%s", argv[i], help);
             return (1);
         }
