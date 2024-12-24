@@ -35,7 +35,7 @@ int main(int argc, char **argv) {
                     return 1;
             }
         } else {
-            if (argc == 2)
+            if (i == argc - 1)
                 break;
             fprintf(stderr, "Unrecognised option \"%s\"\n%s", argv[i], help);
             return 1;
@@ -54,10 +54,10 @@ int main(int argc, char **argv) {
     uint32_t programSize = ftell(rom_ptr);
     rewind(rom_ptr);
 
-    sm83 *cpu = malloc(sizeof(sm83));
-    sm83_init(cpu, 0x10000, bootrom_ptr, rom_ptr);
+    sm83 cpu;
+    sm83_init(&cpu, 0x10000, bootrom_ptr, rom_ptr);
 
-    sm83_deinit(cpu);
+    sm83_deinit(&cpu);
     fclose(rom_ptr);
     return 0;
 }
