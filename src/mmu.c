@@ -5,7 +5,7 @@
 
 #include "mmu.h"
 
-void mmu_init(mmu *self, uint32_t memsize, FILE *bootrom_ptr, FILE *rom_ptr) {
+void mmu_init(_mmu *self, uint32_t memsize, FILE *bootrom_ptr, FILE *rom_ptr) {
     self->mem = (uint8_t *)malloc(memsize);
     self->rom = (uint8_t *)malloc(0x100);
     fread(self->mem, 1, 0x4000, rom_ptr);
@@ -16,12 +16,12 @@ void mmu_init(mmu *self, uint32_t memsize, FILE *bootrom_ptr, FILE *rom_ptr) {
     }
 }
 
-void mmu_deinit(mmu *self) {
+void mmu_deinit(_mmu *self) {
     free(self->mem);
     free(self->rom);
 }
 
-uint8_t mmu_read8(mmu *self, uint16_t addr) {
+uint8_t mmu_read8(_mmu *self, uint16_t addr) {
     switch (addr & 0xf000) {
         case 0x0000:
             // rom bank 00
@@ -119,7 +119,7 @@ uint8_t mmu_read8(mmu *self, uint16_t addr) {
     }
 }
 
-void mmu_write8(mmu *self, uint16_t addr, uint8_t val) {
+void mmu_write8(_mmu *self, uint16_t addr, uint8_t val) {
     switch (addr & 0xf000) {
         case 0x0000:
             // rom bank 00
@@ -219,11 +219,11 @@ void mmu_write8(mmu *self, uint16_t addr, uint8_t val) {
 }
 
 // this is done in little endian
-inline uint16_t mmu_read16(mmu *self, uint16_t addr) {
+inline uint16_t mmu_read16(_mmu *self, uint16_t addr) {
     return (mmu_read8(self, addr + 1) << 8) | mmu_read8(self, addr);
 }
 
-inline void mmu_write16(mmu *self, uint16_t addr, uint16_t val) {
+inline void mmu_write16(_mmu *self, uint16_t addr, uint16_t val) {
     mmu_write8(self, addr, val & 0xff);
     mmu_write8(self, addr + 1, (val & 0xff00) >> 8);
 }

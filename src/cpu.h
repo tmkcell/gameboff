@@ -18,7 +18,7 @@ typedef union _reg {
 } reg;
 
 typedef struct {
-    mmu *mmu;
+    _mmu *mmu;
     reg af, bc, de, hl;
     uint16_t pc, sp;
     bool halt;
