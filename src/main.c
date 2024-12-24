@@ -15,15 +15,15 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; ++i) {
         if (argv[i][0] == '-') {
             switch (argv[i][1]) {
-            case 'v':
-                fprintf(stderr, "%s", PKG_VER);
-                return 1;
-            case 'h':
-                fprintf(stderr, "%s", help);
-                return 1;
-            default:
-                fprintf(stderr, "Unrecognised option \"%s\"\n%s", argv[i], help);
-                return (1);
+                case 'v':
+                    fprintf(stderr, "%s", PKG_VER);
+                    return 1;
+                case 'h':
+                    fprintf(stderr, "%s", help);
+                    return 1;
+                default:
+                    fprintf(stderr, "Unrecognised option \"%s\"\n%s", argv[i], help);
+                    return (1);
             }
         } else {
             if (argc == 2)
