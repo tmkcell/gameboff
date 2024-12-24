@@ -1,5 +1,6 @@
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "cpu.h"
 
@@ -53,6 +54,7 @@ void sm83_init(sm83 *self, uint32_t memsize, FILE *bootrom_ptr, FILE *rom_ptr) {
     else
         self->pc = 0x100;
     self->halt = false;
+    self->mmu = (_mmu *)malloc(sizeof(_mmu));
     mmu_init(self->mmu, memsize, bootrom_ptr, rom_ptr);
 }
 
