@@ -1,5 +1,8 @@
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
+
+#include "mmu.h"
 
 typedef union _reg {
     uint16_t pair;
@@ -15,12 +18,12 @@ typedef union _reg {
 } reg;
 
 typedef struct {
-    uint8_t *mem;
+    mmu *mmu;
     reg af, bc, de, hl;
     uint16_t pc, sp;
     bool halt;
 } sm83;
 
-void sm83_init(sm83 *self, int memsize);
+void sm83_init(sm83 *self, uint32_t memsize, FILE *bootrom_ptr, FILE *rom_ptr);
 void sm83_deinit(sm83 *self);
 void sm83_step(sm83 *self);

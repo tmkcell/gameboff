@@ -1,13 +1,19 @@
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#include "cpu.h"
 
 int main(int argc, char **argv) {
     const char *help = "gameboff [options] rom...\n"
                        "Options:\n"
-                       "    -h     Returns help menu\n"
-                       "    -v     Returns the program version\n";
+                       "    -b [bootrom] Use bootrom 'bootrom'\n"
+                       "    -h           Returns help menu\n"
+                       "    -v           Returns the program version\n";
+    FILE *bootrom_ptr = NULL, *rom_ptr = NULL;
     if (argc == 1) {
         fprintf(stderr, "No ROM path specified\n%s", help);
         return 1;
@@ -15,21 +21,24 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; ++i) {
         if (argv[i][0] == '-') {
             switch (argv[i][1]) {
+                case 'b':
+                    bootrom_ptr = fopen(argv[++i], "rb");
+                    break;
                 case 'v':
                     fprintf(stderr, "%s", PKG_VER);
-                    return 1;
+                    return 0;
                 case 'h':
                     fprintf(stderr, "%s", help);
-                    return 1;
+                    return 0;
                 default:
                     fprintf(stderr, "Unrecognised option \"%s\"\n%s", argv[i], help);
-                    return (1);
+                    return 1;
             }
         } else {
             if (argc == 2)
                 break;
             fprintf(stderr, "Unrecognised option \"%s\"\n%s", argv[i], help);
-            return (1);
+            return 1;
         }
     }
 
@@ -39,18 +48,16 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    FILE *filePtr = NULL;
-    filePtr = fopen(argv[argc - 1], "rb");
-    // Puts the file position pointer at end of the file
-    fseek(filePtr, 0, SEEK_END);
-    // Gives the position of the file position pointer
-    uint32_t programSize = ftell(filePtr);
-    // Puts the file position pointer to the beginning of the file
-    rewind(filePtr);
+    // get program size
+    rom_ptr = fopen(argv[argc - 1], "rb");
+    fseek(rom_ptr, 0, SEEK_END);
+    uint32_t programSize = ftell(rom_ptr);
+    rewind(rom_ptr);
 
-    // THE REST OF THE CODE GOES HERE
+    sm83 *cpu = malloc(sizeof(sm83));
+    sm83_init(cpu, 0x10000, bootrom_ptr, rom_ptr);
 
-    fclose(filePtr);
-    filePtr = NULL;
+    sm83_deinit(cpu);
+    fclose(rom_ptr);
     return 0;
 }

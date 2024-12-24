@@ -1,9 +1,7 @@
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
 
 #include "cpu.h"
-#include "mmu.h"
 
 inline uint8_t add8(sm83 *self, uint8_t b, bool carry) {
     self->af.flags.n = 0;
@@ -44,56 +42,60 @@ inline uint8_t xor8(sm83 *self, uint8_t b) {
     return self->af.hilo[0] ^ b;
 }
 
-void sm83_init(sm83 *self, int memsize) {
+void sm83_init(sm83 *self, uint32_t memsize, FILE *bootrom_ptr, FILE *rom_ptr) {
     self->af.pair = 0;
     self->bc.pair = 0;
     self->de.pair = 0;
     self->hl.pair = 0;
     self->sp = 0;
-    self->pc = 0;
+    if (bootrom_ptr) // bootrom exits to 0x100, emulate it when no bootrom
+        self->pc = 0;
+    else
+        self->pc = 0x100;
     self->halt = false;
-    self->mem = (uint8_t *)malloc(memsize);
+    mmu_init(self->mmu, memsize, bootrom_ptr, rom_ptr);
 }
 
 void sm83_deinit(sm83 *self) {
-    free(self->mem);
+    mmu_deinit(self->mmu);
 }
 
 void sm83_step(sm83 *self) {
-    const uint8_t opcode = mmu_read8(self->mem, ++self->pc);
+    const uint8_t opcode = mmu_read8(self->mmu, ++self->pc);
+    uint16_t tmp = 0; // this is needed for a few instructions
     switch (opcode) {
         case 0x00: // nop
             break;
         // ld xx, n16
         case 0x01:
-            self->bc.pair = mmu_read16(self->mem, ++self->pc);
+            self->bc.pair = mmu_read16(self->mmu, ++self->pc);
             ++self->pc;
             break;
         case 0x11:
-            self->de.pair = mmu_read16(self->mem, ++self->pc);
+            self->de.pair = mmu_read16(self->mmu, ++self->pc);
             ++self->pc;
             break;
         case 0x21:
-            self->hl.pair = mmu_read16(self->mem, ++self->pc);
+            self->hl.pair = mmu_read16(self->mmu, ++self->pc);
             ++self->pc;
             break;
         case 0x31:
-            self->sp = mmu_read16(self->mem, ++self->pc);
+            self->sp = mmu_read16(self->mmu, ++self->pc);
             ++self->pc;
             break;
 
         // ld [xx], a
         case 0x02:
-            mmu_write8(self->mem, self->bc.pair, self->af.hilo[0]);
+            mmu_write8(self->mmu, self->bc.pair, self->af.hilo[0]);
             break;
         case 0x12:
-            mmu_write8(self->mem, self->de.pair, self->af.hilo[0]);
+            mmu_write8(self->mmu, self->de.pair, self->af.hilo[0]);
             break;
         case 0x22: // hl+
-            mmu_write8(self->mem, self->hl.pair++, self->af.hilo[0]);
+            mmu_write8(self->mmu, self->hl.pair++, self->af.hilo[0]);
             break;
         case 0x32: // hl-
-            mmu_write8(self->mem, self->hl.pair--, self->af.hilo[0]);
+            mmu_write8(self->mmu, self->hl.pair--, self->af.hilo[0]);
             break;
 
         // inc xx
@@ -130,10 +132,10 @@ void sm83_step(sm83 *self) {
             self->af.flags.h = (self->hl.hilo[0] & 0xf) == 0;
             break;
         case 0x34:
-            ++self->mem[self->hl.pair];
-            self->af.flags.z = self->mem[self->hl.pair] == 0;
+            mmu_write8(self->mmu, self->hl.pair, tmp = mmu_read8(self->mmu, self->hl.pair) + 1);
+            self->af.flags.z = tmp == 0;
             self->af.flags.n = 0;
-            self->af.flags.h = (self->mem[self->hl.pair] & 0xf) == 0;
+            self->af.flags.h = (tmp & 0xf) == 0;
             break;
 
         // dec x
@@ -156,24 +158,24 @@ void sm83_step(sm83 *self) {
             self->af.flags.h = !((self->hl.hilo[0] & 0xf) == 0);
             break;
         case 0x35:
-            --self->mem[self->hl.pair];
-            self->af.flags.z = self->mem[self->hl.pair] == 0;
+            mmu_write8(self->mmu, self->hl.pair, tmp = mmu_read8(self->mmu, self->hl.pair) - 1);
+            self->af.flags.z = tmp == 0;
             self->af.flags.n = 1;
-            self->af.flags.h = !((self->mem[self->hl.pair] & 0xf) == 0);
+            self->af.flags.h = !((tmp & 0xf) == 0);
             break;
 
         // ld x, n8
         case 0x06:
-            self->bc.hilo[0] = mmu_read8(self->mem, ++self->pc);
+            self->bc.hilo[0] = mmu_read8(self->mmu, ++self->pc);
             break;
         case 0x16:
-            self->de.hilo[0] = mmu_read8(self->mem, ++self->pc);
+            self->de.hilo[0] = mmu_read8(self->mmu, ++self->pc);
             break;
         case 0x26:
-            self->hl.hilo[0] = mmu_read8(self->mem, ++self->pc);
+            self->hl.hilo[0] = mmu_read8(self->mmu, ++self->pc);
             break;
         case 0x36:
-            mmu_write8(self->mem, self->hl.pair, mmu_read8(self->mem, ++self->pc));
+            mmu_write8(self->mmu, self->hl.pair, mmu_read8(self->mmu, ++self->pc));
             break;
 
         // add hl, xx
@@ -204,16 +206,16 @@ void sm83_step(sm83 *self) {
 
         // ld a, [xx]
         case 0x0a:
-            self->af.hilo[0] = mmu_read8(self->mem, self->bc.pair);
+            self->af.hilo[0] = mmu_read8(self->mmu, self->bc.pair);
             break;
         case 0x1a:
-            self->af.hilo[0] = mmu_read8(self->mem, self->de.pair);
+            self->af.hilo[0] = mmu_read8(self->mmu, self->de.pair);
             break;
         case 0x2a:
-            self->af.hilo[0] = mmu_read8(self->mem, self->hl.pair++);
+            self->af.hilo[0] = mmu_read8(self->mmu, self->hl.pair++);
             break;
         case 0x3a:
-            self->af.hilo[0] = mmu_read8(self->mem, self->hl.pair--);
+            self->af.hilo[0] = mmu_read8(self->mmu, self->hl.pair--);
             break;
 
         // dec xx
@@ -284,16 +286,16 @@ void sm83_step(sm83 *self) {
 
         // ld x, n8
         case 0x0e:
-            self->bc.hilo[1] = mmu_read8(self->mem, ++self->pc);
+            self->bc.hilo[1] = mmu_read8(self->mmu, ++self->pc);
             break;
         case 0x1e:
-            self->de.hilo[1] = mmu_read8(self->mem, ++self->pc);
+            self->de.hilo[1] = mmu_read8(self->mmu, ++self->pc);
             break;
         case 0x2e:
-            self->hl.hilo[1] = mmu_read8(self->mem, ++self->pc);
+            self->hl.hilo[1] = mmu_read8(self->mmu, ++self->pc);
             break;
         case 0x3e:
-            self->af.hilo[0] = mmu_read8(self->mem, ++self->pc);
+            self->af.hilo[0] = mmu_read8(self->mmu, ++self->pc);
             break;
 
         // ld x, x
@@ -316,7 +318,7 @@ void sm83_step(sm83 *self) {
             self->bc.hilo[0] = self->hl.hilo[1];
             break;
         case 0x46:
-            self->bc.hilo[0] = mmu_read8(self->mem, self->hl.pair);
+            self->bc.hilo[0] = mmu_read8(self->mmu, self->hl.pair);
             break;
         case 0x47:
             self->bc.hilo[0] = self->af.hilo[0];
@@ -340,7 +342,7 @@ void sm83_step(sm83 *self) {
             self->bc.hilo[1] = self->hl.hilo[1];
             break;
         case 0x4e:
-            self->bc.hilo[1] = mmu_read8(self->mem, self->hl.pair);
+            self->bc.hilo[1] = mmu_read8(self->mmu, self->hl.pair);
             break;
         case 0x4f:
             self->bc.hilo[1] = self->af.hilo[0];
@@ -364,7 +366,7 @@ void sm83_step(sm83 *self) {
             self->de.hilo[0] = self->hl.hilo[1];
             break;
         case 0x56:
-            self->de.hilo[0] = mmu_read8(self->mem, self->hl.pair);
+            self->de.hilo[0] = mmu_read8(self->mmu, self->hl.pair);
             break;
         case 0x57:
             self->de.hilo[0] = self->af.hilo[0];
@@ -388,7 +390,7 @@ void sm83_step(sm83 *self) {
             self->de.hilo[1] = self->hl.hilo[1];
             break;
         case 0x5e:
-            self->de.hilo[1] = mmu_read8(self->mem, self->hl.pair);
+            self->de.hilo[1] = mmu_read8(self->mmu, self->hl.pair);
             break;
         case 0x5f:
             self->de.hilo[1] = self->af.hilo[0];
@@ -412,7 +414,7 @@ void sm83_step(sm83 *self) {
             self->hl.hilo[0] = self->hl.hilo[1];
             break;
         case 0x66:
-            self->hl.hilo[0] = mmu_read8(self->mem, self->hl.pair);
+            self->hl.hilo[0] = mmu_read8(self->mmu, self->hl.pair);
             break;
         case 0x67:
             self->hl.hilo[0] = self->af.hilo[0];
@@ -436,34 +438,34 @@ void sm83_step(sm83 *self) {
             self->hl.hilo[1] = self->hl.hilo[1];
             break;
         case 0x6e:
-            self->hl.hilo[1] = mmu_read8(self->mem, self->hl.pair);
+            self->hl.hilo[1] = mmu_read8(self->mmu, self->hl.pair);
             break;
         case 0x6f:
             self->hl.hilo[1] = self->af.hilo[0];
             break;
         case 0x70:
-            mmu_write8(self->mem, self->hl.pair, self->bc.hilo[0]);
+            mmu_write8(self->mmu, self->hl.pair, self->bc.hilo[0]);
             break;
         case 0x71:
-            mmu_write8(self->mem, self->hl.pair, self->bc.hilo[1]);
+            mmu_write8(self->mmu, self->hl.pair, self->bc.hilo[1]);
             break;
         case 0x72:
-            mmu_write8(self->mem, self->hl.pair, self->de.hilo[0]);
+            mmu_write8(self->mmu, self->hl.pair, self->de.hilo[0]);
             break;
         case 0x73:
-            mmu_write8(self->mem, self->hl.pair, self->de.hilo[1]);
+            mmu_write8(self->mmu, self->hl.pair, self->de.hilo[1]);
             break;
         case 0x74:
-            mmu_write8(self->mem, self->hl.pair, self->hl.hilo[0]);
+            mmu_write8(self->mmu, self->hl.pair, self->hl.hilo[0]);
             break;
         case 0x75:
-            mmu_write8(self->mem, self->hl.pair, self->hl.hilo[1]);
+            mmu_write8(self->mmu, self->hl.pair, self->hl.hilo[1]);
             break;
         case 0x76:
             self->halt = true;
             break;
         case 0x77:
-            mmu_write8(self->mem, self->hl.pair, self->af.hilo[0]);
+            mmu_write8(self->mmu, self->hl.pair, self->af.hilo[0]);
             break;
         case 0x78:
             self->af.hilo[0] = self->bc.hilo[0];
@@ -484,7 +486,7 @@ void sm83_step(sm83 *self) {
             self->af.hilo[0] = self->hl.hilo[1];
             break;
         case 0x7e:
-            self->af.hilo[0] = mmu_read8(self->mem, self->hl.pair);
+            self->af.hilo[0] = mmu_read8(self->mmu, self->hl.pair);
             break;
         case 0x7f:
             self->af.hilo[0] = self->af.hilo[0];
@@ -511,7 +513,7 @@ void sm83_step(sm83 *self) {
             self->af.hilo[0] = add8(self, self->hl.hilo[1], 0);
             break;
         case 0x86:
-            self->af.hilo[0] = add8(self, mmu_read8(self->mem, self->hl.pair), 0);
+            self->af.hilo[0] = add8(self, mmu_read8(self->mmu, self->hl.pair), 0);
             break;
         case 0x87:
             self->af.hilo[0] = add8(self, self->af.hilo[0], 0);
@@ -536,7 +538,7 @@ void sm83_step(sm83 *self) {
             self->af.hilo[0] = add8(self, self->hl.hilo[1], self->af.flags.c);
             break;
         case 0x8e:
-            self->af.hilo[0] = add8(self, mmu_read8(self->mem, self->hl.pair), self->af.flags.c);
+            self->af.hilo[0] = add8(self, mmu_read8(self->mmu, self->hl.pair), self->af.flags.c);
             break;
         case 0x8f:
             self->af.hilo[0] = add8(self, self->af.hilo[0], self->af.flags.c);
@@ -561,7 +563,7 @@ void sm83_step(sm83 *self) {
             self->af.hilo[0] = sub8(self, self->hl.hilo[1], 0);
             break;
         case 0x96:
-            self->af.hilo[0] = sub8(self, mmu_read8(self->mem, self->hl.pair), 0);
+            self->af.hilo[0] = sub8(self, mmu_read8(self->mmu, self->hl.pair), 0);
             break;
         case 0x97:
             self->af.hilo[0] = sub8(self, self->af.hilo[0], 0);
@@ -586,7 +588,7 @@ void sm83_step(sm83 *self) {
             self->af.hilo[0] = sub8(self, self->hl.hilo[1], self->af.flags.c);
             break;
         case 0x9e:
-            self->af.hilo[0] = sub8(self, mmu_read8(self->mem, self->hl.pair), self->af.flags.c);
+            self->af.hilo[0] = sub8(self, mmu_read8(self->mmu, self->hl.pair), self->af.flags.c);
             break;
         case 0x9f:
             self->af.hilo[0] = sub8(self, self->af.hilo[0], self->af.flags.c);
@@ -611,7 +613,7 @@ void sm83_step(sm83 *self) {
             self->af.hilo[0] = and8(self, self->hl.hilo[1]);
             break;
         case 0xa6:
-            self->af.hilo[0] = and8(self, mmu_read8(self->mem, self->hl.pair));
+            self->af.hilo[0] = and8(self, mmu_read8(self->mmu, self->hl.pair));
             break;
         case 0xa7:
             self->af.hilo[0] = and8(self, self->af.hilo[0]);
@@ -636,7 +638,7 @@ void sm83_step(sm83 *self) {
             self->af.hilo[0] = xor8(self, self->hl.hilo[1]);
             break;
         case 0xae:
-            self->af.hilo[0] = xor8(self, mmu_read8(self->mem, self->hl.pair));
+            self->af.hilo[0] = xor8(self, mmu_read8(self->mmu, self->hl.pair));
             break;
         case 0xaf:
             self->af.hilo[0] = xor8(self, self->af.hilo[0]);
@@ -661,7 +663,7 @@ void sm83_step(sm83 *self) {
             self->af.hilo[0] = or8(self, self->hl.hilo[1]);
             break;
         case 0xb6:
-            self->af.hilo[0] = or8(self, mmu_read8(self->mem, self->hl.pair));
+            self->af.hilo[0] = or8(self, mmu_read8(self->mmu, self->hl.pair));
             break;
         case 0xb7:
             self->af.hilo[0] = or8(self, self->af.hilo[0]);
@@ -686,7 +688,7 @@ void sm83_step(sm83 *self) {
             sub8(self, self->hl.hilo[1], self->af.flags.c);
             break;
         case 0xbe:
-            sub8(self, mmu_read8(self->mem, self->hl.pair), self->af.flags.c);
+            sub8(self, mmu_read8(self->mmu, self->hl.pair), self->af.flags.c);
             break;
         case 0xbf:
             sub8(self, self->af.hilo[0], self->af.flags.c);
@@ -694,28 +696,28 @@ void sm83_step(sm83 *self) {
 
         // logic n8 instructions
         case 0xc6:
-            self->af.hilo[0] = add8(self, mmu_read8(self->mem, ++self->pc), 0);
+            self->af.hilo[0] = add8(self, mmu_read8(self->mmu, ++self->pc), 0);
             break;
         case 0xce:
-            self->af.hilo[0] = add8(self, mmu_read8(self->mem, ++self->pc), self->af.flags.c);
+            self->af.hilo[0] = add8(self, mmu_read8(self->mmu, ++self->pc), self->af.flags.c);
             break;
         case 0xd6:
-            self->af.hilo[0] = sub8(self, mmu_read8(self->mem, ++self->pc), 0);
+            self->af.hilo[0] = sub8(self, mmu_read8(self->mmu, ++self->pc), 0);
             break;
         case 0xde:
-            self->af.hilo[0] = sub8(self, mmu_read8(self->mem, ++self->pc), self->af.flags.c);
+            self->af.hilo[0] = sub8(self, mmu_read8(self->mmu, ++self->pc), self->af.flags.c);
             break;
         case 0xe6:
-            self->af.hilo[0] = and8(self, mmu_read8(self->mem, ++self->pc));
+            self->af.hilo[0] = and8(self, mmu_read8(self->mmu, ++self->pc));
             break;
         case 0xee:
-            self->af.hilo[0] = xor8(self, mmu_read8(self->mem, ++self->pc));
+            self->af.hilo[0] = xor8(self, mmu_read8(self->mmu, ++self->pc));
             break;
         case 0xf6:
-            self->af.hilo[0] = or8(self, mmu_read8(self->mem, ++self->pc));
+            self->af.hilo[0] = or8(self, mmu_read8(self->mmu, ++self->pc));
             break;
         case 0xfe:
-            sub8(self, mmu_read8(self->mem, ++self->pc), self->af.flags.c);
+            sub8(self, mmu_read8(self->mmu, ++self->pc), self->af.flags.c);
             break;
     }
 }
