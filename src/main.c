@@ -59,5 +59,6 @@ int main(int argc, char **argv) {
 
     sm83_deinit(&cpu);
     fclose(rom_ptr);
+    fclose(bootrom_ptr);
     return 0;
 }
