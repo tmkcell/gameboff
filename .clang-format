@@ -4,12 +4,12 @@ PointerAlignment: Right
 AllowShortIfStatementsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: true
 AllowShortLoopsOnASingleLine: false
-AllowShortCaseLabelsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: true
 AllowShortBlocksOnASingleLine: false
 AlignEscapedNewlines: DontAlign
 AlignAfterOpenBracket: DontAlign
 SpaceAfterCStyleCast: false
-AlignTrailingComments: true
+AlignTrailingComments: false
 IndentCaseLabels: true
 IndentWidth: 4
 ColumnLimit: 0
