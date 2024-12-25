@@ -224,6 +224,6 @@ inline uint16_t mmu_read16(_mmu *self, uint16_t addr) {
 }
 
 inline void mmu_write16(_mmu *self, uint16_t addr, uint16_t val) {
-    mmu_write8(self, addr, val & 0xff);
-    mmu_write8(self, addr + 1, (val & 0xff00) >> 8);
+    mmu_write8(self, addr, val & 0xff); // write lo to address
+    mmu_write8(self, addr + 1, (val & 0xff00) >> 8); // write hi to address + 1
 }

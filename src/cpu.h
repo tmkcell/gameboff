@@ -21,7 +21,7 @@ typedef struct {
     _mmu *mmu;
     reg af, bc, de, hl;
     uint16_t pc, sp;
-    bool halt;
+    bool halt, interrupts;
 } sm83;
 
 void sm83_init(sm83 *self, uint32_t memsize, FILE *bootrom_ptr, FILE *rom_ptr);
