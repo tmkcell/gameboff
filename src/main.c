@@ -57,8 +57,29 @@ int main(int argc, char **argv) {
     sm83 cpu;
     sm83_init(&cpu, 0x10000, bootrom_ptr, rom_ptr);
 
+#ifdef DEBUG
+    FILE *log = fopen("log.txt", "w+"), *dump = fopen("dump.bin", "w+");
+#endif
+    do {
+#ifdef DEBUG
+        if (cpu.mmu->mem[0xdffd] == 47)
+            break;
+        fprintf(log, "A:%02x F:%02x B:%02x C:%02x D:%02x E:%02x H:%02x L:%02x SP:%04x PC:%04x PCMEM:%02x,%02x,%02x,%02x\n",
+            cpu.af.hilo[HI], cpu.af.hilo[LO], cpu.bc.hilo[HI], cpu.bc.hilo[LO], cpu.de.hilo[HI], cpu.de.hilo[LO],
+            cpu.hl.hilo[HI], cpu.hl.hilo[LO], cpu.sp, cpu.pc, mmu_read8(cpu.mmu, cpu.pc), mmu_read8(cpu.mmu, cpu.pc + 1),
+            mmu_read8(cpu.mmu, cpu.pc + 2), mmu_read8(cpu.mmu, cpu.pc + 3));
+        fwrite(cpu.mmu->mem, 1, 0x10000, dump);
+        rewind(dump);
+#endif
+        sm83_step(&cpu);
+    } while (!cpu.halt);
+
     sm83_deinit(&cpu);
     fclose(rom_ptr);
     fclose(bootrom_ptr);
+#ifdef DEBUG
+    fclose(log);
+    fclose(dump);
+#endif
     return 0;
 }

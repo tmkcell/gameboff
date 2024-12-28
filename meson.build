@@ -13,7 +13,7 @@ pre_args = [
   '-DPKG_VER="@0@"'.format(meson.project_version()),
 ]
 
-if get_option('buildtype') == 'debugoptimised'
+if get_option('buildtype') == 'debugoptimized'
   pre_args += '-DDEBUG'
 endif
 if get_option('buildtype') != 'buildrelease'

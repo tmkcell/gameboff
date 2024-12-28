@@ -4,16 +4,20 @@
 
 #include "mmu.h"
 
+// endianness
+#define HI 1
+#define LO 0
+
 typedef union _reg {
     uint16_t pair;
     uint8_t hilo[2];
     struct {
-        uint8_t hi;
-        unsigned z : 1;
-        unsigned n : 1;
-        unsigned h : 1;
-        unsigned c : 1;
         unsigned lo : 4;
+        unsigned c : 1;
+        unsigned h : 1;
+        unsigned n : 1;
+        unsigned z : 1;
+        uint8_t hi;
     } flags;
 } reg;
 

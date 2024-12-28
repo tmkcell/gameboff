@@ -2,13 +2,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "mmu.h"
 
 void mmu_init(_mmu *self, uint32_t memsize, FILE *bootrom_ptr, FILE *rom_ptr) {
     self->mem = (uint8_t *)malloc(memsize);
     self->rom = (uint8_t *)malloc(0x100);
-    fread(self->mem, 1, 0x4000, rom_ptr);
+    fread(self->mem, 1, 0x8000, rom_ptr);
     // load bootrom_ptr over the rom and unmap later
     if (bootrom_ptr) {
         memcpy(self->rom, self->mem, 0x100); // keep the first 256 bytes of the cartridge until we unmap the bootrom
@@ -21,13 +22,32 @@ void mmu_deinit(_mmu *self) {
     free(self->rom);
 }
 
+#ifdef DEBUG
+void debug_addr_printer(_mmu *self, uint16_t addr, uint8_t val, char rw) {
+    if (addr == 0xff91) {
+        if (rw == 'r') {
+            printf("rd %02x<-%04x by %02x\n",
+                self->mem[addr], addr, self->opcode);
+        } else {
+            printf("wt %02x->%04x by %02x\n",
+                val, addr, self->opcode);
+        }
+    }
+}
+#endif
+
 uint8_t mmu_read8(_mmu *self, uint16_t addr) {
+#ifdef DEBUG
+    debug_addr_printer(self, addr, 0, 'r');
+#endif
     switch (addr & 0xf000) {
         case 0x0000:
             // rom bank 00
+            return self->mem[addr];
             break;
         case 0x4000:
             // rom bank 01-nn via mapper
+            return self->mem[addr];
             break;
         case 0x8000:
             // vram
@@ -36,13 +56,16 @@ uint8_t mmu_read8(_mmu *self, uint16_t addr) {
             // external ram
             break;
         case 0xc000:
+            return self->mem[addr];
             // wram
             break;
         case 0xd000:
+            return self->mem[addr];
             // wram, cgb can switch banks
             break;
         case 0xe000:
         echoram:
+            return self->mem[addr - 0x1000];
             break;
         case 0xf000:
             if (addr < 0xfe00)
@@ -86,6 +109,7 @@ uint8_t mmu_read8(_mmu *self, uint16_t addr) {
                 } else if (addr == 0xff43) {
                     // viewport x pos
                 } else if (addr == 0xff44) {
+                    return 0x90;
                     // lcd y co ordinate
                 } else if (addr == 0xff45) {
                     // lcd y compare
@@ -106,6 +130,7 @@ uint8_t mmu_read8(_mmu *self, uint16_t addr) {
                     return 0xff;
                 }
             } else if (addr < 0xffff) {
+                return self->mem[addr];
                 // hram
             } else if (addr == 0xffff) {
                 // interrupt enable register
@@ -120,6 +145,9 @@ uint8_t mmu_read8(_mmu *self, uint16_t addr) {
 }
 
 void mmu_write8(_mmu *self, uint16_t addr, uint8_t val) {
+#ifdef DEBUG
+    debug_addr_printer(self, addr, val, 'w');
+#endif
     switch (addr & 0xf000) {
         case 0x0000:
             // rom bank 00
@@ -134,13 +162,16 @@ void mmu_write8(_mmu *self, uint16_t addr, uint8_t val) {
             // external ram
             break;
         case 0xc000:
+            self->mem[addr] = val;
             // wram
             break;
         case 0xd000:
+            self->mem[addr] = val;
             // wram, cgb can switch banks
             break;
         case 0xe000:
         echoram:
+            self->mem[addr - 0x1000] = val;
             break;
         case 0xf000:
             if (addr < 0xfe00)
@@ -155,12 +186,13 @@ void mmu_write8(_mmu *self, uint16_t addr, uint8_t val) {
                     // pad input
                 } else if (addr == 0xff01) {
                     // serial transfer
+                    fprintf(stderr, "%c", val);
                     self->mem[0xff01] = val;
                 } else if (addr == 0xff02) {
 #ifdef DEBUG // print contents of serial port to terminal
                     fprintf(stderr, "%c", val);
 #endif
-                    self->mem[0xff02] = val;
+                    self->mem[addr] = val;
                 } else if (addr == 0xff04) {
                     // divier register
                 } else if (addr == 0xff05) {
@@ -206,6 +238,7 @@ void mmu_write8(_mmu *self, uint16_t addr, uint8_t val) {
                     }
                 }
             } else if (addr < 0xffff) {
+                self->mem[addr] = val;
                 // hram
             } else if (addr == 0xffff) {
                 // interrupt enable register

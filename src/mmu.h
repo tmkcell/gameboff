@@ -4,6 +4,9 @@
 typedef struct { // we will likely need mappers here as well
     uint8_t *mem;
     uint8_t *rom;
+#ifdef DEBUG
+    uint8_t opcode;
+#endif
 } _mmu;
 
 void mmu_init(_mmu *self, uint32_t memsize, FILE *bootrom_ptr, FILE *romptr);
