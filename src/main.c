@@ -13,7 +13,8 @@ int main(int argc, char **argv) {
                        "    -b [bootrom] Use bootrom 'bootrom'\n"
                        "    -h           Returns help menu\n"
                        "    -v           Returns the program version\n";
-    FILE *bootrom_ptr = NULL, *rom_ptr = NULL;
+    FILE *bootrom_f = NULL, *rom_f = NULL;
+    uint8_t *bootrom = NULL, *rom = NULL;
     if (argc == 1) {
         fprintf(stderr, "No ROM path specified\n%s", help);
         return 1;
@@ -22,7 +23,9 @@ int main(int argc, char **argv) {
         if (argv[i][0] == '-') {
             switch (argv[i][1]) {
                 case 'b':
-                    bootrom_ptr = fopen(argv[++i], "rb");
+                    bootrom_f = fopen(argv[++i], "rb");
+                    bootrom = malloc(0x100);
+                    fread(bootrom, 1, 0x100, bootrom_f);
                     break;
                 case 'v':
                     fprintf(stderr, "%s", PKG_VER);
@@ -48,14 +51,16 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // get program size
-    rom_ptr = fopen(argv[argc - 1], "rb");
-    fseek(rom_ptr, 0, SEEK_END);
-    uint32_t program_size = ftell(rom_ptr);
-    rewind(rom_ptr);
+    // load rom
+    rom_f = fopen(argv[argc - 1], "rb");
+    fseek(rom_f, 0, SEEK_END);
+    uint32_t rom_size = ftell(rom_f);
+    rewind(rom_f);
+    rom = malloc(rom_size);
+    fread(rom, 1, rom_size, rom_f);
 
     sm83 cpu;
-    sm83_init(&cpu, program_size, bootrom_ptr, rom_ptr);
+    sm83_init(&cpu, bootrom, rom);
 
 #ifdef DEBUG
     FILE *log = fopen("log.txt", "w+"), *dump = fopen("dump.bin", "w+");
@@ -75,8 +80,12 @@ int main(int argc, char **argv) {
     } while (!cpu.halt);
 
     sm83_deinit(&cpu);
-    fclose(rom_ptr);
-    fclose(bootrom_ptr);
+    free(rom);
+    fclose(rom_f);
+    if (bootrom) {
+        free(bootrom);
+        fclose(bootrom_f);
+    }
 #ifdef DEBUG
     fclose(log);
     fclose(dump);

@@ -9,8 +9,8 @@
 
 #include "cpu.h"
 
-void sm83_init(sm83 *self, uint32_t romsize, FILE *bootrom_ptr, FILE *rom_ptr) {
-    if (bootrom_ptr) {
+void sm83_init(sm83 *self, uint8_t *bootrom, uint8_t *rom) {
+    if (bootrom) {
         self->pc = 0;
         self->af.pair = 0;
         self->bc.pair = 0;
@@ -28,11 +28,11 @@ void sm83_init(sm83 *self, uint32_t romsize, FILE *bootrom_ptr, FILE *rom_ptr) {
     self->halt = false;
     self->ime = false; // guessing it will be off on startup
     self->mmu = (_mmu *)malloc(sizeof(_mmu));
-    mmu_init(self->mmu, romsize, bootrom_ptr, rom_ptr);
+    mmu_init(self->mmu, bootrom, rom);
 }
 
 void sm83_deinit(sm83 *self) {
-    mmu_deinit(self->mmu);
+    free(self->mmu); // the rom is not allocated here so don't free
 }
 
 inline uint8_t add8(sm83 *self, uint8_t b, bool carry) {
@@ -90,9 +90,20 @@ inline void rst(sm83 *self, uint8_t val) {
     self->pc = val;
 }
 
-void sm83_step(sm83 *self) {
+inline uint8_t jrcond(sm83 *self, uint8_t cond) {
+    if (cond) {
+        self->pc += (int8_t)mmu_read8(self->mmu, self->pc) + 1;
+        return 3;
+    } else {
+        ++self->pc;
+        return 2;
+    }
+}
+
+uint8_t sm83_step(sm83 *self) {
     uint8_t inst = mmu_read8(self->mmu, self->pc++);
     uint8_t tmp = 0, val; // this is needed for a few instructions
+    uint8_t cyc = 1; // many instructions have 1 M-cycle length
 #ifdef DEBUG
     self->mmu->opcode = mmu_read8(self->mmu, self->pc);
 #endif
@@ -108,46 +119,31 @@ void sm83_step(sm83 *self) {
         case 0xfb: self->ime = true; break;
 
         // jr
-        case 0x18: // jr
+        case 0x18:
+            cyc = 3;
             self->pc += (int8_t)mmu_read8(self->mmu, self->pc) + 1;
             break;
-        case 0x20: // jrnz
-            if (!self->af.flags.z)
-                self->pc += (int8_t)mmu_read8(self->mmu, self->pc) + 1;
-            else
-                ++self->pc;
-            break;
-        case 0x30: // jrnc
-            if (!self->af.flags.c)
-                self->pc += (int8_t)mmu_read8(self->mmu, self->pc) + 1;
-            else
-                ++self->pc;
-            break;
-        case 0x28: // jrnz
-            if (self->af.flags.z)
-                self->pc += (int8_t)mmu_read8(self->mmu, self->pc) + 1;
-            else
-                ++self->pc;
-            break;
-        case 0x38: // jrc
-            if (self->af.flags.c)
-                self->pc += (int8_t)mmu_read8(self->mmu, self->pc) + 1;
-            else
-                ++self->pc;
-            break;
+        case 0x20: cyc = jrcond(self, !self->af.flags.z); break;
+        case 0x30: cyc = jrcond(self, !self->af.flags.c); break;
+        case 0x28: cyc = jrcond(self, self->af.flags.z); break;
+        case 0x38: cyc = jrcond(self, self->af.flags.c); break;
 
         // jp instructions
         case 0xc3: // jp a16
             self->pc = mmu_read16(self->mmu, self->pc);
+            cyc = 4;
             break;
         case 0xe9: // jp hl
             self->pc = self->hl.pair;
             break;
         case 0xc2: // jpnz a16
-            if (!self->af.flags.z)
+            if (!self->af.flags.z) {
                 self->pc = mmu_read16(self->mmu, self->pc);
-            else
+                cyc = 4;
+            } else {
                 self->pc += 2;
+                cyc = 2;
+            }
             break;
         case 0xd2: // jpnc a16
             if (!self->af.flags.c)
@@ -722,6 +718,7 @@ void sm83_step(sm83 *self) {
         //    11 bitnum reg set
         case 0xcb:
             inst = mmu_read8(self->mmu, self->pc++);
+            cyc = 2;
             switch (inst & 7) {
                 case 0: val = self->bc.hilo[HI]; break;
                 case 1: val = self->bc.hilo[LO]; break;
@@ -737,7 +734,7 @@ void sm83_step(sm83 *self) {
                     self->af.flags.z = !((val >> ((inst >> 3) & 0x7)) & 1);
                     self->af.flags.n = 0;
                     self->af.flags.h = 1;
-                    return; // return because bit does not write back to the register
+                    return cyc; // return because bit does not write back to the register
                 case 0x80: // res
                     val &= (0xfe << ((inst >> 3) & 0x7)) | (0xff >> (8 - ((inst >> 3) & 0x7)));
                     break;
@@ -805,4 +802,5 @@ void sm83_step(sm83 *self) {
 #endif
             break;
     }
+    return cyc;
 }

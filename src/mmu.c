@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
 
 #ifdef DEBUG
@@ -9,18 +8,12 @@
 
 #include "mmu.h"
 
-void mmu_init(_mmu *self, uint32_t romsize, FILE *bootrom_ptr, FILE *rom_ptr) {
-    self->rom = (uint8_t *)malloc(romsize);
-    fread(self->rom, 1, romsize, rom_ptr);
+void mmu_init(_mmu *self, uint8_t *bootrom, uint8_t *rom) {
+    self->rom = rom;
     self->rombank = self->rom[0x148];
-    if (bootrom_ptr) { // load bootrom_ptr over the rom and unmap later
-        memcpy(self->mem, self->rom, 0x100); // we copy back from ram because we don't actually read rom from there lol
-        fread(self->rom, 1, 0x100, bootrom_ptr);
+    if (bootrom) { // load bootrom_ptr over the rom and unmap later
+        memcpy(self->mem, self->rom, 0x100); // copy back from ram later since rom isn't read there lol
     }
-}
-
-void mmu_deinit(_mmu *self) {
-    free(self->rom);
 }
 
 #ifdef DEBUG
@@ -89,7 +82,8 @@ uint8_t mmu_read8(_mmu *self, uint16_t addr) {
                     fprintf(stderr, "%c", self->mem[addr]);
 #endif
                 } else if (addr == 0xff04) {
-                    // divier register
+                    // divider register, incremented at 16384Hz/every 256 cycles
+                    return self->mem[0xff04];
                 } else if (addr == 0xff05) {
                     // timer counter
                 } else if (addr == 0xff06) {
@@ -137,7 +131,9 @@ uint8_t mmu_read8(_mmu *self, uint16_t addr) {
             } else if (addr == 0xffff) {
                 // interrupt enable register
             } else {
+#ifdef DEBUG
                 fprintf(stderr, "warning: unrecognised i/o port \"%04x\" read", addr);
+#endif
                 return 0xff;
             }
             break;
@@ -192,7 +188,6 @@ void mmu_write8(_mmu *self, uint16_t addr, uint8_t val) {
                     // pad input
                 } else if (addr == 0xff01) {
                     // serial transfer
-                    fprintf(stderr, "%c", val);
                     self->mem[0xff01] = val;
                 } else if (addr == 0xff02) {
 #ifdef DEBUG // print contents of serial port to terminal
@@ -200,7 +195,8 @@ void mmu_write8(_mmu *self, uint16_t addr, uint8_t val) {
 #endif
                     self->mem[addr] = val;
                 } else if (addr == 0xff04) {
-                    // divier register
+                    // divider register, writing clears
+                    self->mem[addr] = 0;
                 } else if (addr == 0xff05) {
                     // timer counter
                 } else if (addr == 0xff06) {
@@ -249,7 +245,9 @@ void mmu_write8(_mmu *self, uint16_t addr, uint8_t val) {
             } else if (addr == 0xffff) {
                 // interrupt enable register
             } else {
+#ifdef DEBUG
                 fprintf(stderr, "warning: unrecognised i/o port \"%04x\" write", addr);
+#endif
             }
             break;
         default:
