@@ -132,7 +132,7 @@ inline void rst(sm83 *self, uint8_t val) {
 void inst_cb(sm83 *self) {
     const uint8_t inst = mmu_read8(self->mmu, self->pc++);
     uint8_t val, tmp = 0;
-    switch (inst & 3) {
+    switch (inst & 7) {
         case 0: val = self->bc.hilo[HI]; break;
         case 1: val = self->bc.hilo[LO]; break;
         case 2: val = self->de.hilo[HI]; break;
@@ -197,7 +197,7 @@ void inst_cb(sm83 *self) {
             break;
     }
     // write back to register
-    switch (inst & 3) {
+    switch (inst & 7) {
         case 0: self->bc.hilo[HI] = val; break;
         case 1: self->bc.hilo[LO] = val; break;
         case 2: self->de.hilo[HI] = val; break;
@@ -402,6 +402,7 @@ void sm83_step(sm83 *self) {
             self->af.flags.c = 1;
             break;
         case 0x2f: // cpl
+            self->af.hilo[HI] = ~self->af.hilo[HI];
             self->af.flags.n = 1;
             self->af.flags.h = 1;
             break;
