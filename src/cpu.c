@@ -361,7 +361,9 @@ void sm83_step(sm83 *self) {
         case 0xc5: push16(self, self->bc.pair); break;
         case 0xd5: push16(self, self->de.pair); break;
         case 0xe5: push16(self, self->hl.pair); break;
-        case 0xf5: push16(self, self->af.pair); break;
+        case 0xf5:
+            push16(self, self->af.pair & 0xfff0); // ignore again
+            break;
 
         // rotate instructions
         case 0x07: // rlca
@@ -482,7 +484,8 @@ void sm83_step(sm83 *self) {
             self->af.flags.h = (self->hl.hilo[HI] & 0xf) == 0;
             break;
         case 0x34:
-            mmu_write8(self->mmu, self->hl.pair, tmp = mmu_read8(self->mmu, self->hl.pair) + 1);
+            tmp = (uint8_t)(mmu_read8(self->mmu, self->hl.pair) + 1);
+            mmu_write8(self->mmu, self->hl.pair, tmp);
             self->af.flags.z = tmp == 0;
             self->af.flags.n = 0;
             self->af.flags.h = (tmp & 0xf) == 0;
@@ -690,7 +693,7 @@ void sm83_step(sm83 *self) {
             self->af.hilo[HI] = mmu_read8(self->mmu, mmu_read8(self->mmu, self->pc++) + 0xff00);
             break;
         case 0xe2:
-            mmu_write8(self->mmu, mmu_read8(self->mmu, self->bc.hilo[LO] + 0xff00), self->af.hilo[HI]);
+            mmu_write8(self->mmu, self->bc.hilo[LO] + 0xff00, self->af.hilo[HI]);
             break;
         case 0xf2:
             self->af.hilo[HI] = mmu_read8(self->mmu, self->bc.hilo[LO] + 0xff00);
