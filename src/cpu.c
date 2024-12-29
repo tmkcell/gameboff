@@ -75,26 +75,18 @@ inline uint8_t xor8(sm83 *self, uint8_t b) {
     return self->af.hilo[HI] ^ b;
 }
 
-inline void push16(sm83 *self, uint16_t val) {
-    mmu_write16(self->mmu, self->sp -= 2, val);
-}
-
 inline void pop16(sm83 *self, uint16_t *val) {
     *val = mmu_read16(self->mmu, self->sp);
     self->sp += 2;
 }
 
 inline void call(sm83 *self) {
-    push16(self, self->pc + 2);
+    mmu_write16(self->mmu, self->sp -= 2, self->pc + 2);
     self->pc = mmu_read16(self->mmu, self->pc);
 }
 
-inline void ret(sm83 *self) {
-    pop16(self, &self->pc);
-}
-
 inline void rst(sm83 *self, uint8_t val) {
-    push16(self, self->pc);
+    mmu_write16(self->mmu, self->sp -= 2, self->pc);
     self->pc = val;
 }
 
@@ -179,25 +171,25 @@ void sm83_step(sm83 *self) {
         // ret instructions
         case 0xc0: // retnz a16
             if (!self->af.flags.z)
-                ret(self);
+                pop16(self, &self->pc);
             break;
         case 0xd0: // retnc a16
             if (!self->af.flags.c)
-                ret(self);
+                pop16(self, &self->pc);
             break;
         case 0xc8: // retz a16
             if (self->af.flags.z)
-                ret(self);
+                pop16(self, &self->pc);
             break;
         case 0xd8: // retc a16
             if (self->af.flags.c)
-                ret(self);
+                pop16(self, &self->pc);
             break;
         case 0xc9: // ret
-            ret(self);
+            pop16(self, &self->pc);
             break;
         case 0xd9: // reti
-            ret(self);
+            pop16(self, &self->pc);
             self->ime = true;
             break;
 
@@ -240,20 +232,18 @@ void sm83_step(sm83 *self) {
             call(self);
             break;
 
-        // stack instructions
+        // stack instructions, F's low 4 bits are ALWAYS ignored
         case 0xc1: pop16(self, &self->bc.pair); break;
         case 0xd1: pop16(self, &self->de.pair); break;
         case 0xe1: pop16(self, &self->hl.pair); break;
         case 0xf1:
             pop16(self, &self->af.pair);
-            self->af.flags.lo = 0; // F's low 4 bits are always ignored
+            self->af.flags.lo = 0;
             break;
-        case 0xc5: push16(self, self->bc.pair); break;
-        case 0xd5: push16(self, self->de.pair); break;
-        case 0xe5: push16(self, self->hl.pair); break;
-        case 0xf5:
-            push16(self, self->af.pair & 0xfff0); // ignore again
-            break;
+        case 0xc5: mmu_write16(self->mmu, self->sp -= 2, self->bc.pair); break;
+        case 0xd5: mmu_write16(self->mmu, self->sp -= 2, self->de.pair); break;
+        case 0xe5: mmu_write16(self->mmu, self->sp -= 2, self->hl.pair); break;
+        case 0xf5: mmu_write16(self->mmu, self->sp -= 2, self->af.pair & 0xfff0); break;
 
         // rotate instructions
         case 0x07: // rlca
