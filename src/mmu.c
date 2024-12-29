@@ -1,30 +1,31 @@
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef DEBUG
+#include <stdio.h>
 #include <unistd.h>
+#endif
 
 #include "mmu.h"
 
-void mmu_init(_mmu *self, uint32_t memsize, FILE *bootrom_ptr, FILE *rom_ptr) {
-    self->mem = (uint8_t *)malloc(memsize);
-    self->rom = (uint8_t *)malloc(0x100);
-    fread(self->mem, 1, 0x8000, rom_ptr);
-    // load bootrom_ptr over the rom and unmap later
-    if (bootrom_ptr) {
-        memcpy(self->rom, self->mem, 0x100); // keep the first 256 bytes of the cartridge until we unmap the bootrom
-        fread(self->mem, 1, 0x100, bootrom_ptr);
+void mmu_init(_mmu *self, uint32_t romsize, FILE *bootrom_ptr, FILE *rom_ptr) {
+    self->rom = (uint8_t *)malloc(romsize);
+    fread(self->rom, 1, romsize, rom_ptr);
+    self->rombank = self->rom[0x148];
+    if (bootrom_ptr) { // load bootrom_ptr over the rom and unmap later
+        memcpy(self->mem, self->rom, 0x100); // we copy back from ram because we don't actually read rom from there lol
+        fread(self->rom, 1, 0x100, bootrom_ptr);
     }
 }
 
 void mmu_deinit(_mmu *self) {
-    free(self->mem);
     free(self->rom);
 }
 
 #ifdef DEBUG
 void debug_addr_printer(_mmu *self, uint16_t addr, uint8_t val, char rw) {
-    if (addr == 0xff91) {
+    if (addr == 0xdef6) {
         if (rw == 'r') {
             printf("rd %02x<-%04x by %02x\n",
                 self->mem[addr], addr, self->opcode);
@@ -43,29 +44,30 @@ uint8_t mmu_read8(_mmu *self, uint16_t addr) {
     switch (addr & 0xf000) {
         case 0x0000:
             // rom bank 00
-            return self->mem[addr];
+            return self->rom[addr];
             break;
         case 0x4000:
             // rom bank 01-nn via mapper
-            return self->mem[addr];
+            return self->rom[addr + (0x4000 * (self->rombank))];
             break;
         case 0x8000:
             // vram
             break;
         case 0xa000:
-            // external ram
+            // external ram, no need to worry about enabling
+            return self->mem[addr - 0x8000];
             break;
         case 0xc000:
-            return self->mem[addr];
             // wram
+            return self->mem[addr - 0x8000];
             break;
         case 0xd000:
-            return self->mem[addr];
             // wram, cgb can switch banks
+            return self->mem[addr - 0x8000];
             break;
         case 0xe000:
         echoram:
-            return self->mem[addr - 0x1000];
+            return self->mem[addr - 0x9000];
             break;
         case 0xf000:
             if (addr < 0xfe00)
@@ -150,10 +152,14 @@ void mmu_write8(_mmu *self, uint16_t addr, uint8_t val) {
 #endif
     switch (addr & 0xf000) {
         case 0x0000:
-            // rom bank 00
+            // rom bank number, get max bank from cartridge header to mask
+            if (addr >= 0x2000)
+                self->rombank = val & 0x1f & (2 << self->rom[0x148]);
             break;
         case 0x4000:
             // rom bank 01-nn via mapper
+            if (addr < 0x6000)
+                self->rombank = val & 0x1f & (2 << self->rom[0x148]);
             break;
         case 0x8000:
             // vram
@@ -162,16 +168,16 @@ void mmu_write8(_mmu *self, uint16_t addr, uint8_t val) {
             // external ram
             break;
         case 0xc000:
-            self->mem[addr] = val;
+            self->mem[addr - 0x8000] = val;
             // wram
             break;
         case 0xd000:
-            self->mem[addr] = val;
+            self->mem[addr - 0x8000] = val;
             // wram, cgb can switch banks
             break;
         case 0xe000:
         echoram:
-            self->mem[addr - 0x1000] = val;
+            self->mem[addr - 0x9000] = val;
             break;
         case 0xf000:
             if (addr < 0xfe00)
@@ -234,7 +240,7 @@ void mmu_write8(_mmu *self, uint16_t addr, uint8_t val) {
                 } else if (addr == 0xff50) {
                     // set to non 0 to unmap boot rom
                     if (val > 0) {
-                        memcpy(self->mem, self->rom, 0x100);
+                        memcpy(self->rom, self->mem, 0x100);
                     }
                 }
             } else if (addr < 0xffff) {
