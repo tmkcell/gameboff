@@ -23,9 +23,15 @@ int main(int argc, char **argv) {
         if (argv[i][0] == '-') {
             switch (argv[i][1]) {
                 case 'b':
-                    bootrom_f = fopen(argv[++i], "rb");
-                    bootrom = malloc(0x100);
-                    fread(bootrom, 1, 0x100, bootrom_f);
+                    if (!bootrom) {
+                        if (access(argv[++i], F_OK | R_OK) == -1) {
+                            fprintf(stderr, "Unable to read bootrom \"%s\"", argv[i]);
+                            return 1;
+                        }
+                        bootrom_f = fopen(argv[i], "rb");
+                        bootrom = malloc(0x100);
+                        fread(bootrom, 1, 0x100, bootrom_f);
+                    }
                     break;
                 case 'v':
                     fprintf(stderr, "%s", PKG_VER);
@@ -47,7 +53,7 @@ int main(int argc, char **argv) {
 
     // we need read permissions if a file exists
     if (access(argv[argc - 1], F_OK | R_OK) == -1) {
-        fprintf(stderr, "Unable to read file \"%s\"", argv[argc - 1]);
+        fprintf(stderr, "Unable to read rom \"%s\"", argv[argc - 1]);
         return 1;
     }
 
