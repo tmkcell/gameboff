@@ -9,30 +9,26 @@
 
 #include "cpu.h"
 
-void sm83_init(sm83 *self, uint32_t memsize, FILE *bootrom_ptr, FILE *rom_ptr) {
-    if (bootrom_ptr) { // emulate state after bootrom
+void sm83_init(sm83 *self, uint32_t romsize, FILE *bootrom_ptr, FILE *rom_ptr) {
+    if (bootrom_ptr) {
         self->pc = 0;
         self->af.pair = 0;
         self->bc.pair = 0;
         self->de.pair = 0;
         self->hl.pair = 0;
         self->sp = 0;
-    } else {
+    } else { // emulate state after bootrom
         self->pc = 0x100;
-        self->af.hilo[HI] = 0x01;
-        self->af.hilo[LO] = 0xb0;
-        self->bc.hilo[HI] = 0x00;
-        self->bc.hilo[LO] = 0x13;
-        self->de.hilo[HI] = 0x00;
-        self->de.hilo[LO] = 0xd8;
-        self->hl.hilo[HI] = 0x01;
-        self->hl.hilo[LO] = 0x4d;
+        self->af.pair = 0x01b0;
+        self->bc.pair = 0x0013;
+        self->de.pair = 0x00d8;
+        self->hl.pair = 0x014d;
         self->sp = 0xfffe;
     }
     self->halt = false;
-    self->interrupts = false; // guessing it will be off on startup
+    self->ime = false; // guessing it will be off on startup
     self->mmu = (_mmu *)malloc(sizeof(_mmu));
-    mmu_init(self->mmu, memsize, bootrom_ptr, rom_ptr);
+    mmu_init(self->mmu, romsize, bootrom_ptr, rom_ptr);
 }
 
 void sm83_deinit(sm83 *self) {
@@ -102,128 +98,22 @@ inline void rst(sm83 *self, uint8_t val) {
     self->pc = val;
 }
 
-/*
- *    0xcb instruction encodings
- *    reg
- *    000 b
- *    001 c
- *    010 d
- *    011 e
- *    100 h
- *    101 l
- *    110 [hl]
- *    111 a
- *
- *    top 2 bits = 00
- *    00000 reg rlc
- *    00001 reg rrc
- *    00010 reg rl
- *    00011 reg rr
- *    00100 reg sla
- *    00101 reg sra
- *    00110 reg swap
- *    00111 reg srl
- *
- *    bitnum is a 3 bit literal
- *    01 bitnum reg bit
- *    10 bitnum reg res
- *    11 bitnum reg set
- */
-void inst_cb(sm83 *self) {
-    const uint8_t inst = mmu_read8(self->mmu, self->pc++);
-    uint8_t val, tmp = 0;
-    switch (inst & 7) {
-        case 0: val = self->bc.hilo[HI]; break;
-        case 1: val = self->bc.hilo[LO]; break;
-        case 2: val = self->de.hilo[HI]; break;
-        case 3: val = self->de.hilo[LO]; break;
-        case 4: val = self->hl.hilo[HI]; break;
-        case 5: val = self->hl.hilo[LO]; break;
-        case 6: val = mmu_read8(self->mmu, self->hl.pair); break;
-        case 7: val = self->af.hilo[HI]; break;
-    }
-    switch (inst & 0xc0) {
-        case 0x40: // bit
-            self->af.flags.z = !((val >> ((inst >> 3) & 0x7)) & 1);
-            self->af.flags.n = 0;
-            self->af.flags.h = 1;
-            return; // return because bit does not write back to the register
-        case 0x80: // res
-            val &= (0xfe << ((inst >> 3) & 0x7)) | (0xff >> (8 - ((inst >> 3) & 0x7)));
-            break;
-        case 0xc0: // set
-            val |= (0x1 << ((inst >> 3) & 0x7));
-            break;
-        case 0x00:
-            self->af.flags.n = 0;
-            self->af.flags.h = 0;
-            switch (inst & 0x38) {
-                case 0x00: // rlc
-                    self->af.flags.c = val >> 7;
-                    val = (val << 1) | self->af.flags.c;
-                    break;
-                case 0x08: // rrc
-                    self->af.flags.c = val & 1;
-                    val = (val >> 1) | (self->af.flags.c << 7);
-                    break;
-                case 0x10: // rl
-                    tmp = self->af.flags.c;
-                    self->af.flags.c = val >> 7;
-                    val = (val << 1) | tmp;
-                    break;
-                case 0x18: // rr
-                    tmp = self->af.flags.c;
-                    self->af.flags.c = val & 1;
-                    val = (val >> 1) | (tmp << 7);
-                    break;
-                case 0x20: // sla
-                    self->af.flags.c = val >> 7;
-                    val <<= 1;
-                    break;
-                case 0x28: // sra
-                    self->af.flags.c = val & 1;
-                    val = (val >> 1) | (val & 0x80);
-                    break;
-                case 0x30: // swap
-                    self->af.flags.c = 0;
-                    val = (val >> 4) | (val << 4);
-                    break;
-                case 0x38: // srl
-                    self->af.flags.c = val & 1;
-                    val >>= 1;
-                    break;
-            }
-            self->af.flags.z = val == 0;
-            break;
-    }
-    // write back to register
-    switch (inst & 7) {
-        case 0: self->bc.hilo[HI] = val; break;
-        case 1: self->bc.hilo[LO] = val; break;
-        case 2: self->de.hilo[HI] = val; break;
-        case 3: self->de.hilo[LO] = val; break;
-        case 4: self->hl.hilo[HI] = val; break;
-        case 5: self->hl.hilo[LO] = val; break;
-        case 6: mmu_write8(self->mmu, self->hl.pair, val); break;
-        case 7: self->af.hilo[HI] = val; break;
-    }
-}
-
 void sm83_step(sm83 *self) {
-    uint16_t tmp = 0; // this is needed for a few instructions
+    uint8_t inst = mmu_read8(self->mmu, self->pc++);
+    uint8_t tmp = 0, val; // this is needed for a few instructions
 #ifdef DEBUG
     self->mmu->opcode = mmu_read8(self->mmu, self->pc);
 #endif
-    switch (mmu_read8(self->mmu, self->pc++)) {
+    switch (inst) {
         case 0x00: // nop
             break;
 
         case 0x10: // stop
             break;
 
-        // interrupts
-        case 0xf3: self->interrupts = false; break;
-        case 0xfb: self->interrupts = true; break;
+        // ime
+        case 0xf3: self->ime = false; break;
+        case 0xfb: self->ime = true; break;
 
         // jr
         case 0x18: // jr
@@ -308,7 +198,7 @@ void sm83_step(sm83 *self) {
             break;
         case 0xd9: // reti
             ret(self);
-            self->interrupts = true;
+            self->ime = true;
             break;
 
         // rst instructions
@@ -484,7 +374,7 @@ void sm83_step(sm83 *self) {
             self->af.flags.h = (self->hl.hilo[HI] & 0xf) == 0;
             break;
         case 0x34:
-            tmp = (uint8_t)(mmu_read8(self->mmu, self->hl.pair) + 1);
+            tmp = mmu_read8(self->mmu, self->hl.pair) + 1;
             mmu_write8(self->mmu, self->hl.pair, tmp);
             self->af.flags.z = tmp == 0;
             self->af.flags.n = 0;
@@ -815,8 +705,109 @@ void sm83_step(sm83 *self) {
         case 0xf6: self->af.hilo[HI] = or8(self, mmu_read8(self->mmu, self->pc++)); break;
         case 0xfe: sub8(self, mmu_read8(self->mmu, self->pc++), 0); break;
 
-        // another optable :(
-        case 0xcb: inst_cb(self); break;
+        //    0xcb instruction encodings
+        //    reg
+        //    000 b
+        //    001 c
+        //    010 d
+        //    011 e
+        //    100 h
+        //    101 l
+        //    110 [hl]
+        //    111 a
+        //
+        //    top 2 bits = 00
+        //    00000 reg rlc
+        //    00001 reg rrc
+        //    00010 reg rl
+        //    00011 reg rr
+        //    00100 reg sla
+        //    00101 reg sra
+        //    00110 reg swap
+        //    00111 reg srl
+        //
+        //    bitnum is a 3 bit literal
+        //    01 bitnum reg bit
+        //    10 bitnum reg res
+        //    11 bitnum reg set
+        case 0xcb:
+            inst = mmu_read8(self->mmu, self->pc++);
+            switch (inst & 7) {
+                case 0: val = self->bc.hilo[HI]; break;
+                case 1: val = self->bc.hilo[LO]; break;
+                case 2: val = self->de.hilo[HI]; break;
+                case 3: val = self->de.hilo[LO]; break;
+                case 4: val = self->hl.hilo[HI]; break;
+                case 5: val = self->hl.hilo[LO]; break;
+                case 6: val = mmu_read8(self->mmu, self->hl.pair); break;
+                case 7: val = self->af.hilo[HI]; break;
+            }
+            switch (inst & 0xc0) {
+                case 0x40: // bit
+                    self->af.flags.z = !((val >> ((inst >> 3) & 0x7)) & 1);
+                    self->af.flags.n = 0;
+                    self->af.flags.h = 1;
+                    return; // return because bit does not write back to the register
+                case 0x80: // res
+                    val &= (0xfe << ((inst >> 3) & 0x7)) | (0xff >> (8 - ((inst >> 3) & 0x7)));
+                    break;
+                case 0xc0: // set
+                    val |= (0x1 << ((inst >> 3) & 0x7));
+                    break;
+                case 0x00:
+                    self->af.flags.n = 0;
+                    self->af.flags.h = 0;
+                    switch (inst & 0x38) {
+                        case 0x00: // rlc
+                            self->af.flags.c = val >> 7;
+                            val = (val << 1) | self->af.flags.c;
+                            break;
+                        case 0x08: // rrc
+                            self->af.flags.c = val & 1;
+                            val = (val >> 1) | (self->af.flags.c << 7);
+                            break;
+                        case 0x10: // rl
+                            tmp = self->af.flags.c;
+                            self->af.flags.c = val >> 7;
+                            val = (val << 1) | tmp;
+                            break;
+                        case 0x18: // rr
+                            tmp = self->af.flags.c;
+                            self->af.flags.c = val & 1;
+                            val = (val >> 1) | (tmp << 7);
+                            break;
+                        case 0x20: // sla
+                            self->af.flags.c = val >> 7;
+                            val <<= 1;
+                            break;
+                        case 0x28: // sra
+                            self->af.flags.c = val & 1;
+                            val = (val >> 1) | (val & 0x80);
+                            break;
+                        case 0x30: // swap
+                            self->af.flags.c = 0;
+                            val = (val >> 4) | (val << 4);
+                            break;
+                        case 0x38: // srl
+                            self->af.flags.c = val & 1;
+                            val >>= 1;
+                            break;
+                    }
+                    self->af.flags.z = val == 0;
+                    break;
+            }
+            // write back to register
+            switch (inst & 7) {
+                case 0: self->bc.hilo[HI] = val; break;
+                case 1: self->bc.hilo[LO] = val; break;
+                case 2: self->de.hilo[HI] = val; break;
+                case 3: self->de.hilo[LO] = val; break;
+                case 4: self->hl.hilo[HI] = val; break;
+                case 5: self->hl.hilo[LO] = val; break;
+                case 6: mmu_write8(self->mmu, self->hl.pair, val); break;
+                case 7: self->af.hilo[HI] = val; break;
+            }
+            break;
 
         default:
 #ifdef DEBUG

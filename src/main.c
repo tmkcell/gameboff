@@ -51,11 +51,11 @@ int main(int argc, char **argv) {
     // get program size
     rom_ptr = fopen(argv[argc - 1], "rb");
     fseek(rom_ptr, 0, SEEK_END);
-    uint32_t programSize = ftell(rom_ptr);
+    uint32_t program_size = ftell(rom_ptr);
     rewind(rom_ptr);
 
     sm83 cpu;
-    sm83_init(&cpu, 0x10000, bootrom_ptr, rom_ptr);
+    sm83_init(&cpu, program_size, bootrom_ptr, rom_ptr);
 
 #ifdef DEBUG
     FILE *log = fopen("log.txt", "w+"), *dump = fopen("dump.bin", "w+");
