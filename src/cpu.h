@@ -29,4 +29,4 @@ typedef struct {
 
 void sm83_init(sm83 *self, uint8_t *bootrom, uint8_t *rom);
 void sm83_deinit(sm83 *self);
-uint8_t sm83_step(sm83 *self);
+uint8_t sm83_step(sm83 *self); // returns number of M-cycles for the executed instruction
